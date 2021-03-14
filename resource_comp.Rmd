@@ -1,5 +1,5 @@
 ---
-title: "resource_comp"
+title: "Resource competition"
 author: "ZZ"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
@@ -12,26 +12,28 @@ output:
       collapsed: no
       smooth_scroll: no
 ---
+\
 
 
-
-
-**The question**:
+**The question**:\
 Here, we aim to test whether **resource availability** (light and/or nutrient) affects the competitive outcomes between **alien** and **native** plants.
 
 **The design**:\
-Angelina grew 16 species (8 aliens and 8 natives), either alone, with intraspecific competition, or with interspecific competition (only alien-native pairs, and included 32 pairs). The experiment was conducted in Konstanz, Germany\
+In Konstanz, Germany, Angelina grew 16 species (8 aliens and 8 natives), either alone, or with intraspecific competition, or with interspecific competition (32 out of the 64 alien-native pairs were included). \
 
-Yanjie's group did a similar experiment with 8 species (4 aliens and 4 natives), in Changchun, China. But they also included alien-alien and native-native pairs.\
+In Changchun, China, Yanjie's group did a similar experiment with 8 species (4 aliens and 4 natives). They also included alien-alien and native-native pairs.\
 
 
 **The analyses**:\
-First, I pooled two experiments together, removing the alien-alien and native-native pairs in Yanjie's experiment (model: m0).\
+First, I pooled two experiments together, with the alien-alien and native-native pairs in Yanjie's experiment removed (model: m0).\
 Then, I analyzed the two experiments seperately (models: m_zz & m_yj).\
 
 **The results**:\
-Most importantly, all three models showed that aliens were more competitive than natives, when both nutrient and light availabilities are high. This is indicated by the significant, or margnially significant, interactions between status (alien or native), fertilization and shading.
+Most importantly, all three models showed that aliens were more competitive than natives, when both nutrient and light availabilities were high. This is indicated by the significant, or margnially significant, interactions between status (alien or native), fertilization and shading.
 
+
+**To do**:\
+1. The trade-off between light competition and nutrient competition.
 
 
 <style type="text/css">
@@ -102,7 +104,9 @@ colnames(dat_zz) <- colnames(dat_zz) %>% tolower()
 dat_yj <- dat_yj_raw %>% 
   dplyr::select(Nr., Target_Species, Target_Status, Competition, Competitor_Species, Competitor_Status,
          N_Treatment, Shading_Treatment,
-         Target_Shoot, Competitor_Shoot)
+         Target_Shoot, Competitor_Shoot, Target_Root) %>% 
+  mutate(Target_Species = ifelse(Target_Species == 'Paspalum_orbiculare', 'Paspalum_scrobiculatum', as.character(Target_Species))) %>% 
+  mutate(Competitor_Species = ifelse(Competitor_Species == 'Paspalum_orbiculare', 'Paspalum_scrobiculatum', as.character(Competitor_Species)))
 
 ```
 
@@ -119,7 +123,8 @@ dat_yj_t <- dat_yj %>% # target individuals
          comp_treat  = Competition ,
          fert  = N_Treatment,
          light =  Shading_Treatment,
-         id = Nr.)
+         id = Nr., 
+         root = Target_Root)
 
 dat_yj_c <- dat_yj %>% # competitors
   dplyr::select(-Target_Shoot) %>% 
@@ -131,7 +136,11 @@ dat_yj_c <- dat_yj %>% # competitors
          comp_treat  = Competition ,
          fert  = N_Treatment,
          light =  Shading_Treatment,
-         id = Nr.)
+         id = Nr.,
+         root = Target_Root) %>% 
+  mutate(root = NA)
+
+
 dat_yj <- rbind(dat_yj_t, dat_yj_c) %>% 
   filter(status != 'Without') %>% 
   mutate(status = ifelse(status == 'Self', as.character(status_comp), as.character(status))#,
@@ -154,17 +163,26 @@ dat_yj <- rbind(dat_yj_t, dat_yj_c) %>%
 list <- dat_yj$id[is.na(dat_yj$biomass)] %>% unique
 dat_yj <- dat_yj %>% 
   filter(!id %in% list)
+```
 
-sp_list <-dat_yj$target %>% unique %>% str_replace('_', ' ')
+
+```{r}
+# standardize names
+sp_list <- dat_yj$target %>% unique %>% str_replace('_', ' ')
+
+
+
 sp_list <- TPL(sp_list) %>% 
   dplyr::select(Taxon, Family) %>% 
   mutate(Taxon = str_replace(Taxon, ' ', '_')) 
+
 dat_yj <- dat_yj %>% 
   left_join(sp_list, by = c('target' = 'Taxon')) %>% 
   rename(family_tar = Family) %>% 
   left_join(sp_list, by = c('comp' = 'Taxon')) %>% 
   rename(family_comp = Family) %>% 
   mutate(family_comp = ifelse(is.na(family_comp), 'Non', as.character(family_comp)))
+
 rm(sp_list, list, dat_yj_c, dat_yj_t)
 ```
 
@@ -191,10 +209,9 @@ dat_zz <- dat_zz %>%
 
 
 
-# analyses
-
-## only native-alien, two dataset pooled
-merge two datasets
+# analyses I
+## two datasets pooled
+merge the two datasets (only alone, intraspecific competition, and alien-native pairs)
 ```{r}
 dat <- dat_yj %>% 
   filter(as.character(status) != as.character(status_comp)) %>% # exclude native-native, and alien-alien combs
@@ -203,7 +220,7 @@ dat <- dat_yj %>%
   mutate(exp = str_extract(id, '^.')) # distinguish the two experiments
 ```
 
-add contrast\
+add contrasts\
 T1: alone vs competition\
 T2: intra- vs inter- competition
 ```{r}
@@ -216,17 +233,20 @@ mat_solve = solve(t(mat))[,2:3] %>%
   mutate(comp_treat = c('alone', 'inter', 'intra')) %>% 
   rename(T_alone_comp = V1,
          T_intra_inter = V2)
+
 dat <- dat %>% 
   left_join(mat_solve)
 rm(mat)
+
+# for random slope
+dat <- dat %>% 
+  mutate(light_slope = paste(target, light, sep = '_'),
+         fert_slope = paste(target, fert, sep = '_'))
 ```
 
 
 ```{r, eval = F}
 u <- rep(1, nrow(dat))
-dat <- dat %>% 
-  mutate(light_slope = paste(target, light, sep = '_'),
-         fert_slope = paste(target, fert, sep = '_'))
 m0 <- lme(log(biomass) ~ status*(T_alone_comp + T_intra_inter) * fert * light, # + length_in_mm
           random=list(u = pdBlocked(list(
                                         pdIdent(form = ~ exp-1),
@@ -302,6 +322,7 @@ mat_solve_yj = solve(t(mat))[,2:4] %>%
          T_intra_inter  = V2,
          T_alien_native = V3
          )
+
 dat_yj_only <- dat_yj %>% 
   left_join(mat_solve_yj) %>% 
   mutate(light_slope = paste(target, light, sep = '_'),
@@ -336,14 +357,14 @@ m_yj %>% Ftable
 ```
 
 
-# Figures
+# Figures for analysis I
 All figures are ploted with raw data.\
 
 ## status:fertilization:shading
 Aliens are more competitive than native when both nutrient and light levels are high.\
 
 
-In Yanjie's experiment, the boxplot based on raw data shows that aliens were less competitive than natives, when nutrient level is low and light level is high. This is not consistent with the other two figures. But if we use modelled values, the pattern will be consistent with the other two figures.\
+In Yanjie's experiment, the boxplot based on raw data shows that aliens were less competitive than natives, when nutrient level is low and light level is high. This is not consistent with the other two figures. But if we use modelled values, the patterns will be the same.\
 
 So, I would prefer to plot with modelled values.
 ```{r, fig.width = 5, fig.height = 3.5}
@@ -370,12 +391,12 @@ dat %>%
 
 dat_zz_only %>% 
   ggplot(aes(x = fert, y = biomass, fill = status)) + geom_boxplot() +
-  facet_wrap( ~ light) + labs(title = 'Pooled', y = 'Aboveground biomass\n', x = '\nNutrient level') + theme
+  facet_wrap( ~ light) + labs(title = 'Germany', y = 'Aboveground biomass\n', x = '\nNutrient level') + theme
 
 
 dat_yj_only %>% 
   ggplot(aes(x = fert, y = biomass, fill = status)) + geom_boxplot() +
-  facet_wrap( ~ light) + labs(title = 'Pooled', y = 'Aboveground biomass\n', x = '\nNutrient level') + theme
+  facet_wrap( ~ light) + labs(title = 'China', y = 'Aboveground biomass\n', x = '\nNutrient level') + theme
 ```
 
 
@@ -392,6 +413,7 @@ dat %>%
 ## T_alone_comp:fert
 ```{r, fig.width = 5, fig.height = 3.5}
 dat %>% 
+  mutate(fert = ifelse(fert == 'Low', 'Low nutrient', 'High nutrient')) %>% 
   ggplot(aes(x = comp_treat, y = biomass)) + geom_boxplot() +
   facet_wrap( ~ fert) + labs(title = 'Pooled', y = 'Aboveground biomass\n', x = '\nCompetition') + theme
 ```
@@ -405,12 +427,24 @@ dat %>%
 
 
 ## status:T_alien_native
-only significant in Yanjie's experiment. Aliens were less limited by natives than by aliens, but this does not hold for natives.
+only significant in Yanjie's experiment. \
+Aliens were less limited by natives than by aliens, but this does not hold for natives.
 ```{r, fig.width = 5, fig.height = 3.5}
 dat_yj_only %>% 
   filter(status_comp %in% c('alien', 'native')) %>% 
-  ggplot(aes(x = status_comp, y = biomass, fill = status)) + geom_boxplot() + theme
+  ggplot(aes(x = status_comp, y = biomass, fill = status)) + geom_boxplot() + theme + labs(title = 'China')
 ```
+
+## status:intra_inter:light
+only significant in the Konstanz-experiment.\
+Under high-level-light condition, aliens had higher biomass than natives when growing with each other. This is not true for intraspecific competition and not true under low-level-light condition. 
+```{r, fig.width = 5, fig.height = 3.5}
+dat_zz_only %>% 
+  filter(comp_treat != 'alone') %>% 
+  ggplot(aes(x = comp_treat, y = biomass, fill = status)) + geom_boxplot() + 
+  facet_wrap(~light) + theme + labs(title = 'Germany')
+```
+
 
 
 export tables
@@ -421,6 +455,163 @@ m_zz %>% Ftable %>% save_kable('table/zz_single.png')
 m_yj %>% Ftable %>% save_kable('table/yj_single.png')
 
 ```
+
+
+# analysis II
+
+?min requirement, or max growth
+```{r}
+# calculate the mean
+test <- dat %>% 
+  filter(comp_treat == 'alone') %>% 
+  group_by(target, light, fert, exp, family_tar, status) %>% 
+  summarise(mean = mean(log(biomass)))
+
+
+test <- test %>% 
+  #--------- add shading-low as the reference level------#
+  left_join(test %>% 
+              filter(light == 'Shading', fert == 'Low') %>% # low as ck
+              rename(mean_ck_low = mean) %>% 
+              ungroup %>% 
+              dplyr::select(target, mean_ck_low)) %>% 
+  #-----------add ambient-high as the reference level--------------------#
+    left_join(test %>% 
+              filter(light == 'Ambient', fert == 'High') %>%  # high as ck
+              rename(mean_ck_high = mean) %>% 
+              ungroup %>% 
+              dplyr::select(target, mean_ck_high)) %>% 
+  #-------------------------------------#
+  mutate(lnRR_low = mean - mean_ck_low,
+         lnRR_high = mean_ck_high - mean)
+
+test2 <- test %>% 
+  filter((fert == 'Low' & light == 'Ambient')|(fert == 'High' & light == 'Shading')) %>% 
+  mutate(treat = paste(fert, light, sep = '_')) %>% 
+  ungroup %>% 
+  dplyr::select(-light, -fert, -mean) %>% 
+  pivot_wider(names_from = treat, values_from = c(lnRR_low, lnRR_high)) %>% 
+  rename(nutrient_min = `lnRR_low_High_Shading`,
+         light_min    = `lnRR_low_Low_Ambient`,
+         light_max    = `lnRR_high_High_Shading`,
+         nutrient_max = `lnRR_high_Low_Ambient`
+         )
+
+# test3 <- test %>% 
+#   filter((fert == 'Low' & light == 'Ambient')|(fert == 'High' & light == 'Shading')) %>% 
+#   mutate(treat = paste(fert, light, sep = '_')) %>% 
+#   ungroup %>% 
+#   pivot_longer(cols = starts_with('ln'),
+#                names_to = 'type',
+#                values_to = 'lnRR') %>% 
+#   mutate()
+
+```
+
+```{r}
+test2 %>% ggplot() +
+  aes(x = nutrient_min, y = light_min) + geom_point(aes(col = status)) + facet_wrap(~ exp) + # geom_smooth() 
+  geom_hline(yintercept = 0) + geom_vline(xintercept = 0) +
+  scale_x_continuous(limits = c(-0.5, 4)) + scale_y_continuous(limits = c(-3.5, 2.7))
+```
+
+```{r}
+test2 %>% ggplot() +
+  aes(x = nutrient_max, y = light_max) + geom_point(aes(col = status)) +  facet_wrap(~ exp) + #geom_smooth() +
+  geom_hline(yintercept = 0) + geom_vline(xintercept = 0) +
+  scale_x_continuous(limits = c(-0.5, 4)) + scale_y_continuous(limits = c(-3.5, 2.7))
+```
+
+
+```{r}
+cor.test(test2$light_max, test2$nutrient_max) # marginally significant
+cor.test(test2$light_min, test2$nutrient_min)
+cor.test(test2$light_max, test2$light_min)
+cor.test(test2$nutrient_min, test2$nutrient_max)
+```
+
+
+# analysis III
+proportion of alien
+```{r}
+dat_inter <- dat %>% 
+  filter(comp_treat == 'inter')
+dat_ratio <- dat_inter %>% 
+  filter(status == 'alien') %>% 
+  left_join(dat_inter %>% filter(status == 'native') %>% select(id, biomass) %>% rename(bio_native = biomass)) %>% 
+  mutate(ratio = biomass/(bio_native))
+
+rm(dat_inter)
+
+```
+
+```{r}
+u <- rep(1, nrow(dat_ratio))
+m_ratio <- lme(log(ratio) ~ fert * light, 
+            random=list(u = pdBlocked(list(
+                                          pdIdent(form = ~ family_tar-1),
+                                          pdIdent(form = ~ target-1),
+                                          pdIdent(form = ~ family_comp-1),
+                                          pdIdent(form = ~ light_slope-1),
+                                          pdIdent(form = ~ fert_slope-1),
+                                          pdIdent(form = ~ comp-1)
+                                          ))), # adding pot id does not improve the model, but consume lots of computation.
+            weights = varComb(varIdent(form= ~1|target),
+                              varIdent(form= ~1|comp_treat)
+                              ),
+            control = lmeControl(msMaxIter = 100000),
+            data=dat_ratio)
+```
+
+
+```{r}
+m_ratio %>% Ftable
+```
+
+
+```{r}
+dat_ratio %>% 
+  ggplot(aes(x = fert, y = log(ratio))) + geom_boxplot() +
+  facet_wrap( ~ light) + labs(title = 'Pooled', y = 'alien/native\n', x = '\nNutrient level') + theme
+
+```
+
+
+# analysis IIII
+root allocation
+```{r}
+dat_root <- dat %>% filter(!is.na(root)) %>% 
+  mutate(RSR = log(root/biomass))
+```
+
+```{r}
+u <- rep(1, nrow(dat_root))
+m_root <- lme(RSR ~ status*fert * light, 
+            random=list(u = pdBlocked(list(
+                                          pdIdent(form = ~ family_tar-1),
+                                          pdIdent(form = ~ target-1),
+                                          pdIdent(form = ~ light_slope-1),
+                                          pdIdent(form = ~ fert_slope-1)
+                                          ))), # adding pot id does not improve the model, but consume lots of computation.
+            weights = varComb(varIdent(form= ~1|target)
+                              ),
+            control = lmeControl(msMaxIter = 100000),
+            data=dat_root)
+```
+
+
+
+```{r}
+m_root %>% Ftable()
+```
+
+```{r}
+dat_root %>% 
+  ggplot(aes(x = fert, y = RSR, fill = status)) + geom_boxplot() +
+  facet_wrap( ~ light) + labs(title = 'China', y = 'RSR\n', x = '\nNutrient level') + theme
+```
+
+
 
 ```{r}
 save(file = 'results.RData', list = ls())
