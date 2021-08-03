@@ -47,3 +47,11 @@ Ftable_ext <- function(model){
   return(table_fix)
   
 }
+
+# remove legend but keep space
+
+# theme(
+#   legend.text = element_text(color = "white"),
+#   legend.title = element_text(color = "white"),
+#   legend.key = element_rect(fill = "white")
+# )
