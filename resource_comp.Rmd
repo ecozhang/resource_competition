@@ -82,6 +82,8 @@ pre { /* Code block - determines code spacing between lines */
 
 ```{r}
 knitr::opts_chunk$set(message = F,warning = F)
+dir.create('fig', showWarnings = F)
+dir.create('table', showWarnings = F)
 ```
 
 
@@ -91,6 +93,8 @@ library(Taxonstand)
 library(nlme)
 library(knitr)
 library(kableExtra)
+library(gridExtra)
+library(effects)
 load('results.RData')
 source('functions.R')
 ```
@@ -98,15 +102,16 @@ source('functions.R')
 # read data
 ```{r}
 dat_yj_raw <- read.csv('Data_ABcomp_HFJ.csv')
-dat_zz <- read.csv('Konstanz.csv')
+dat_zz <- read.csv('Konstanz20210318.csv') %>% 
+  # dplyr::select(- Box, -Box.2)
+  rename(cage_rand1 = Box,
+         cage_rand2 = Box.2)
 colnames(dat_zz) <- colnames(dat_zz) %>% tolower()
 
 dat_yj <- dat_yj_raw %>% 
   dplyr::select(Nr., Target_Species, Target_Status, Competition, Competitor_Species, Competitor_Status,
          N_Treatment, Shading_Treatment,
-         Target_Shoot, Competitor_Shoot, Target_Root) %>% 
-  mutate(Target_Species = ifelse(Target_Species == 'Paspalum_orbiculare', 'Paspalum_scrobiculatum', as.character(Target_Species))) %>% 
-  mutate(Competitor_Species = ifelse(Competitor_Species == 'Paspalum_orbiculare', 'Paspalum_scrobiculatum', as.character(Competitor_Species)))
+         Target_Shoot, Competitor_Shoot, Target_Root)
 
 ```
 
@@ -217,7 +222,12 @@ dat <- dat_yj %>%
   filter(as.character(status) != as.character(status_comp)) %>% # exclude native-native, and alien-alien combs
   dplyr::select(-status_comp) %>% 
   bind_rows(dat_zz) %>% 
-  mutate(exp = str_extract(id, '^.')) # distinguish the two experiments
+  mutate(exp = str_extract(id, '^.')) %>% # distinguish the two experiments
+  mutate(cage_rand1 = ifelse(is.na(cage_rand1), as.character(light), as.character(cage_rand1)),
+         cage_rand2 = ifelse(is.na(cage_rand2), as.character(light), as.character(cage_rand2))
+         )
+
+
 ```
 
 add contrasts\
@@ -255,12 +265,15 @@ m0 <- lme(log(biomass) ~ status*(T_alone_comp + T_intra_inter) * fert * light, #
                                         pdIdent(form = ~ light_slope -1),
                                         pdIdent(form = ~ fert_slope -1),  # similar to random slope
                                         pdIdent(form = ~ family_comp-1),
-                                        pdIdent(form = ~ comp-1)
+                                        pdIdent(form = ~ comp-1),
+                                        pdIdent(form = ~ cage_rand1-1)
                                         ))),
           weights = varComb(varIdent(form= ~1|target),
                             varIdent(form= ~1|comp_treat)),
           control = lmeControl(msMaxIter = 10000, msMaxEval = 10000),
           data=dat)
+
+
 ```
 
 
@@ -289,14 +302,13 @@ m_zz <- lme(log(biomass) ~ status*(T_alone_comp + T_intra_inter) * fert * light,
                                           pdIdent(form = ~ light_slope-1),
                                           pdIdent(form = ~ fert_slope-1),
                                           pdIdent(form = ~ comp-1)
-                                          ))), # adding pot id does not improve the model, but consume lots of computation.
+                                          ))), # adding pot id or block does not improve the model, but consume lots of computation.
             weights = varComb(varIdent(form= ~1|target),
                               varIdent(form= ~1|comp_treat)
                               ),
             control = lmeControl(msMaxIter = 100000),
             data=dat_zz_only)
 
-test2 <- update(m_zz, .~ status:fert:light - 1)
 ```
 
 
@@ -357,6 +369,31 @@ m_yj %>% Ftable
 ```
 
 
+Export all tables in one file
+
+```{r}
+tables <- lapply(list(m_yj, m_zz, m0), Ftable_ext)
+table_in_one <- tables[[1]] %>% # China
+  left_join(tables[[2]], by = 'items') %>% # Germany 
+  full_join(tables[[3]], by = 'items') %>%  # both
+  replace_na(list(`.y` = ' ',
+                  ` ` = ' '
+                  )) %>% 
+  mutate_if(is.numeric, round,3)
+  
+
+# table_in_one %>% kable() %>% 
+#   kable_styling()
+```
+
+
+```{r}
+write.csv(table_in_one, 'table/table_in_one.csv', fileEncoding = "UTF-8")
+```
+
+
+
+
 # Figures for analysis I
 All figures are ploted with raw data.\
 
@@ -367,72 +404,262 @@ Aliens are more competitive than native when both nutrient and light levels are 
 In Yanjie's experiment, the boxplot based on raw data shows that aliens were less competitive than natives, when nutrient level is low and light level is high. This is not consistent with the other two figures. But if we use modelled values, the patterns will be the same.\
 
 So, I would prefer to plot with modelled values.
-```{r, fig.width = 5, fig.height = 3.5}
+```{r}
 theme <-theme(panel.background = element_blank(),
               panel.border     = element_rect(fill = NA), 
               strip.background = element_blank(),
               strip.text.x = element_text(size = 10),
               axis.text.x = element_text(size = 8, angle = 0, hjust = 0.5, colour = 'black'),
               axis.text.y  = element_text(size = 8, colour = 'black'),
-              axis.title = element_text(size = 10),# size of y lab
+              axis.title = element_text(size = 10),# size of x  y lab
               #legend.position   = c(0.9, 0.85),
-              legend.title      = element_text(size = 10),
-              legend.text       = element_text(size = 8),
-              legend.key.height = unit(0.7,'line'),
+              legend.title      = element_text(size = 8),
+              legend.text       = element_text(size = 6),
+              legend.key.height = unit(0.8,'line'),
               legend.background = element_blank(),
               legend.key        = element_rect(colour = NA, fill = NA),
               plot.tag    = element_text(size = 8, face  = 'bold'),
               plot.title  = element_text(hjust = 0.5, size = 12),
               plot.margin = margin(t = 0.5, r = 0.1, b = 0, l = 0.1, unit = "cm"))
+```
 
+
+
+modelled values
+```{r}
+u <- rep(1, nrow(dat))
+m_fig   <- update(m0, .~ status * fert * light)
+m_light <- update(m0, ~ light * comp_treat)
+m_fert  <- update(m0, ~ fert * comp_treat)
+```
+
+
+```{r}
+u <- rep(1, nrow(dat_yj))
+m_status <- update(m_yj, .~ status * status_comp)
+```
+
+
+
+## origin:fert:light
+```{r}
+t <- effect('status:fert:light', m_fig) %>% as.data.frame() %>% 
+  mutate(xaxis = c(1, 2, 4, 5, 7, 8, 10, 11))
+
+dat_fig1 <- dat %>% 
+  left_join(t %>% dplyr::select(status, light, fert, xaxis))
+```
+
+
+
+```{r}
+p1 <- dat_fig1 %>% 
+  mutate(origin = status) %>% 
+  ggplot() +
+  geom_point(aes(x = xaxis, y = log(biomass)), 
+             position = position_jitter(w = 0.15, h = 0), 
+             col = 'black', 
+             alpha = 0.04, 
+             size = 0.6) +
+  geom_point(data = t,
+             aes(x = xaxis, y = (fit), col = status), 
+             size = 1.5) +
+  geom_errorbar(data = t, 
+                aes(ymin = (fit-se), ymax = (fit+se), x = xaxis, col = status), 
+                width = 0,  inherit.aes = FALSE,
+                size = 0.8) +
+  scale_x_continuous(limits = c(0.5, 11.5), breaks = c(1.5, 4.5, 7.5, 10.5), 
+                     labels = c("Low resources", "+ nutrient", '+ light', '+ nutrient & + light')) + 
+  scale_y_continuous(limits = c(-4, 4)) + 
+  # scale_color_manual(values = col_fig) + 
+  labs(x = '', y = 'ln(Aboveground biomass)', col = 'Origin')+ theme
+p1
+
+```
+
+
+```{r}
+ggsave('./fig/pooled.pdf', p1, height = 7/2.54, width = 11/2.54, useDingbats=FALSE)
+```
+
+
+
+## fert:competition
+```{r}
+t_fert <- effect('fert:comp_treat', m_fert) %>% as.data.frame() %>% 
+  arrange(desc(fert)) %>% 
+  mutate(xaxis = c(1:3, 5:7))
+
+dat_fig2a <- dat %>% 
+  left_join(t_fert %>% dplyr::select(fert, comp_treat, xaxis))
+```
+
+```{r}
+col_fig <- c('#F39C12', '#115888', '#85C1E9')
+
+p2a <- dat_fig2a %>% 
+  ggplot() +
+  geom_point(aes(x = xaxis, y = log(biomass)), 
+             position = position_jitter(w = 0.15, h = 0), 
+             col = 'black', 
+             alpha = 0.04, 
+             size = 0.6) +
+  geom_point(data = t_fert, 
+             aes(x = xaxis, y = (fit), col = comp_treat), 
+             size = 1.5) +
+  geom_errorbar(data = t_fert, 
+                aes(ymin = (fit-se), ymax = (fit+se), x = xaxis, col = comp_treat), 
+                width = 0,  inherit.aes = FALSE,
+                size = 0.8) +
+  scale_x_continuous(limits = c(0.5, 7.5), breaks = c(2, 6), 
+                     labels = c("Low nutrient", "+ nutrient")) + 
+  scale_y_continuous(limits = c(-4, 4)) + 
+  # scale_y_continuous(limits = c(0, 20)) + 
+  scale_color_manual(values = col_fig) + 
+  labs(x = '', y = 'ln(Aboveground biomass)', tag = 'a',  col = 'Competition')+ theme
+p2a
+```
+
+
+## light:competition
+```{r}
+t_light <- effect('light:comp_treat', m_light) %>% as.data.frame() %>% 
+  arrange(desc(light)) %>% 
+  mutate(xaxis = c(1:3, 5:7))
+
+dat_fig2b <- dat %>% 
+  left_join(t_light %>% dplyr::select(light, comp_treat, xaxis))
+```
+
+```{r}
+p2b <- dat_fig2b %>% 
+  ggplot() +
+  geom_point(aes(x = xaxis, y = log(biomass)), 
+             position = position_jitter(w = 0.15, h = 0), 
+             col = 'black', 
+             alpha = 0.04, 
+             size = 0.6) +
+  geom_point(data = t_light, 
+             aes(x = xaxis, y = (fit), col = comp_treat), 
+             size = 1.5) +
+  geom_errorbar(data = t_light, 
+                aes(ymin = (fit-se), ymax = (fit+se), x = xaxis, col = comp_treat), 
+                width = 0,  inherit.aes = FALSE,
+                size = 0.8) +
+  scale_x_continuous(limits = c(0.5, 7.5), breaks = c(2, 6), 
+                     labels = c('Low light', "+ light")) + 
+  scale_y_continuous(limits = c(-4, 4)) + 
+  # scale_y_continuous(limits = c(0, 20)) + 
+  scale_color_manual(values = col_fig) + 
+  labs(x = '', y = 'ln(Aboveground biomass)', tag = 'b', col = 'Competition') + 
+  theme +
+  theme(
+        legend.text = element_text(color = "white"),
+        legend.title = element_text(color = "white"),
+        legend.key = element_rect(fill = "white")
+    )
+p2b
+```
+
+
+```{r}
+
+ggsave('./fig/comp.pdf', height = 7/2.54, width = 18/2.54,
+       grid.arrange(p2a, p2b, ncol = 2))
+```
+
+
+## origin:origin_comp
+```{r}
+t_status <- effect('status:status_comp', m_status) %>% as.data.frame() %>% 
+  arrange(status)
+t_status <- t_status[c(1,4, 5, 8),] %>% 
+  mutate(xaxis = c(1:2, 4:5))
+
+dat_fig3 <- dat_yj_only %>% 
+  left_join(t_status %>% dplyr::select(status, status_comp, xaxis)) %>% 
+  filter(!is.na(xaxis))
+```
+
+```{r}
+p3 <- dat_fig3 %>% 
+  ggplot() +
+  geom_point(aes(x = xaxis, y = log(biomass)), 
+             position = position_jitter(w = 0.15, h = 0), 
+             col = 'black', 
+             alpha = 0.04, 
+             size = 0.6) +
+  geom_point(data = t_status, 
+             aes(x = xaxis, y = (fit), col = status), 
+             size = 1.5) +
+  geom_errorbar(data = t_status, 
+                aes(ymin = (fit-se), ymax = (fit+se), x = xaxis, col = status), 
+                width = 0,  inherit.aes = FALSE,
+                size = 0.8) +
+  scale_x_continuous(limits = c(0.5, 5.5), breaks = c(1, 2, 4, 5), 
+                     labels = c('Alien', 'Native', 'Alien', 'Native')) + 
+  scale_y_continuous(limits = c(-4, 4)) + 
+  # scale_y_continuous(limits = c(0, 20)) + 
+  labs(x = '\nOrigin of the competitor', y = 'ln(Aboveground biomass)', col = 'Origin of the target')+ theme
+p3
+```
+
+```{r}
+ggsave('./fig/origin.pdf', p3, height = 7/2.54, width = 11/2.54, useDingbats=FALSE)
+```
+
+## old figures
+```{r, fig.width = 5, fig.height = 3.5}
+col_fig <- c('#f7ad4d', '#b041b0')
 dat %>% 
-  ggplot(aes(x = fert, y = biomass, fill = status)) + geom_boxplot() +
-  facet_wrap( ~ light) + labs(title = 'Pooled', y = 'Aboveground biomass\n', x = '\nNutrient level') + theme
+  filter(biomass > 0.001) %>% 
+  ggplot(aes(x = fert, y = log(biomass), fill = status)) + geom_boxplot() +
+  scale_fill_manual(values = col_fig) + 
+  facet_wrap( ~ light) + labs(title = 'Pooled', y = '(Aboveground biomass)\n', x = '\nNutrient level') + theme
+
+
 
 dat_zz_only %>% 
-  ggplot(aes(x = fert, y = biomass, fill = status)) + geom_boxplot() +
+  ggplot(aes(x = fert, y = log(biomass), fill = status)) + geom_boxplot() +
+  scale_fill_manual(values = col_fig) + 
   facet_wrap( ~ light) + labs(title = 'Germany', y = 'Aboveground biomass\n', x = '\nNutrient level') + theme
 
 
 dat_yj_only %>% 
-  ggplot(aes(x = fert, y = biomass, fill = status)) + geom_boxplot() +
+  ggplot(aes(x = fert, y = log(biomass), fill = status)) + geom_boxplot() +
+  scale_fill_manual(values = col_fig) + 
   facet_wrap( ~ light) + labs(title = 'China', y = 'Aboveground biomass\n', x = '\nNutrient level') + theme
 ```
 
 
-
-
-## T_alone_comp:light
 ```{r, fig.width = 5, fig.height = 3.5}
 dat %>% 
-  ggplot(aes(x = comp_treat, y = biomass)) + geom_boxplot() +
+  ggplot(aes(x = comp_treat, y = log(biomass))) + geom_boxplot() +
   facet_wrap( ~ light) + labs(title = 'Pooled', y = 'Aboveground biomass\n', x = '\nCompetition') + theme
 
 ```
 
-## T_alone_comp:fert
+
 ```{r, fig.width = 5, fig.height = 3.5}
 dat %>% 
   mutate(fert = ifelse(fert == 'Low', 'Low nutrient', 'High nutrient')) %>% 
-  ggplot(aes(x = comp_treat, y = biomass)) + geom_boxplot() +
+  ggplot(aes(x = comp_treat, y = log(biomass))) + geom_boxplot() +
   facet_wrap( ~ fert) + labs(title = 'Pooled', y = 'Aboveground biomass\n', x = '\nCompetition') + theme
 ```
 
-## fert:light
+
 ```{r, fig.width = 5, fig.height = 3.5}
 dat %>% 
   ggplot(aes(x = fert, y = biomass)) + geom_boxplot() +
   facet_wrap( ~ light) + labs(title = 'Pooled', y = 'Aboveground biomass\n', x = '\nNutrient level') + theme
 ```
 
-
-## status:T_alien_native
 only significant in Yanjie's experiment. \
 Aliens were less limited by natives than by aliens, but this does not hold for natives.
 ```{r, fig.width = 5, fig.height = 3.5}
 dat_yj_only %>% 
   filter(status_comp %in% c('alien', 'native')) %>% 
-  ggplot(aes(x = status_comp, y = biomass, fill = status)) + geom_boxplot() + theme + labs(title = 'China')
+  ggplot(aes(x = status, y = log(biomass), fill = status_comp)) + geom_boxplot() + theme + labs(title = 'China')
 ```
 
 ## status:intra_inter:light
@@ -449,7 +676,7 @@ dat_zz_only %>%
 
 export tables
 ```{r}
-dir.create('table', showWarnings = F)
+
 m0 %>% Ftable %>% save_kable('table/pooled.png')
 m_zz %>% Ftable %>% save_kable('table/zz_single.png')
 m_yj %>% Ftable %>% save_kable('table/yj_single.png')
@@ -457,7 +684,102 @@ m_yj %>% Ftable %>% save_kable('table/yj_single.png')
 ```
 
 
+
 # analysis II
+proportion of alien
+```{r}
+dat_inter <- dat %>% 
+  filter(comp_treat == 'inter')
+dat_ratio <- dat_inter %>% 
+  filter(status == 'alien') %>% 
+  left_join(dat_inter %>% filter(status == 'native') %>% select(id, biomass) %>% rename(bio_native = biomass)) %>% 
+  mutate(ratio = biomass/(bio_native),
+         percent = biomass/(biomass + bio_native))
+
+rm(dat_inter)
+
+```
+
+```{r}
+u <- rep(1, nrow(dat_ratio))
+m_ratio <- lme(log(ratio) ~ fert * light, 
+            random=list(u = pdBlocked(list(
+                                          pdIdent(form = ~ family_tar-1),
+                                          pdIdent(form = ~ target-1),
+                                          pdIdent(form = ~ family_comp-1),
+                                          pdIdent(form = ~ light_slope-1),
+                                          pdIdent(form = ~ fert_slope-1),
+                                          pdIdent(form = ~ comp-1)
+                                          ))), # adding pot id does not improve the model, but consume lots of computation.
+            weights = varComb(varIdent(form= ~1|target),
+                              varIdent(form= ~1|comp_treat)
+                              ),
+            control = lmeControl(msMaxIter = 100000),
+            data=dat_ratio)
+```
+
+
+```{r}
+m_ratio %>% Ftable
+```
+
+
+
+
+```{r}
+dat_ratio %>% 
+  ggplot(aes(x = fert, y = log(ratio))) + geom_boxplot() +
+  facet_wrap( ~ light) + labs(title = 'Pooled', y = 'alien/native\n', x = '\nNutrient level') + theme
+
+```
+
+
+
+
+
+# analysis III
+root allocation
+```{r}
+dat_root <- dat %>% filter(!is.na(root)) %>% 
+  mutate(RSR = log(root/biomass))
+```
+
+```{r}
+u <- rep(1, nrow(dat_root))
+m_root <- lme(RSR ~ status*fert * light, 
+            random=list(u = pdBlocked(list(
+                                          pdIdent(form = ~ family_tar-1),
+                                          pdIdent(form = ~ target-1),
+                                          pdIdent(form = ~ light_slope-1),
+                                          pdIdent(form = ~ fert_slope-1)
+                                          ))), # adding pot id does not improve the model, but consume lots of computation.
+            weights = varComb(varIdent(form= ~1|target)
+                              ),
+            control = lmeControl(msMaxIter = 100000),
+            data=dat_root)
+```
+
+
+
+```{r}
+m_root %>% Ftable()
+```
+
+```{r}
+dat_root %>% 
+  ggplot(aes(x = fert, y = RSR, fill = status)) + geom_boxplot() +
+  facet_wrap( ~ light) + labs(title = 'China', y = 'RSR\n', x = '\nNutrient level') + theme
+```
+
+
+
+
+
+
+# analysis IIII
+
+Increasing one resource is always testing how much it limits the growth. But there are two circumstances: whether the other one is limited.
+
 
 ?min requirement, or max growth
 ```{r}
@@ -529,89 +851,6 @@ cor.test(test2$light_min, test2$nutrient_min)
 cor.test(test2$light_max, test2$light_min)
 cor.test(test2$nutrient_min, test2$nutrient_max)
 ```
-
-
-# analysis III
-proportion of alien
-```{r}
-dat_inter <- dat %>% 
-  filter(comp_treat == 'inter')
-dat_ratio <- dat_inter %>% 
-  filter(status == 'alien') %>% 
-  left_join(dat_inter %>% filter(status == 'native') %>% select(id, biomass) %>% rename(bio_native = biomass)) %>% 
-  mutate(ratio = biomass/(bio_native))
-
-rm(dat_inter)
-
-```
-
-```{r}
-u <- rep(1, nrow(dat_ratio))
-m_ratio <- lme(log(ratio) ~ fert * light, 
-            random=list(u = pdBlocked(list(
-                                          pdIdent(form = ~ family_tar-1),
-                                          pdIdent(form = ~ target-1),
-                                          pdIdent(form = ~ family_comp-1),
-                                          pdIdent(form = ~ light_slope-1),
-                                          pdIdent(form = ~ fert_slope-1),
-                                          pdIdent(form = ~ comp-1)
-                                          ))), # adding pot id does not improve the model, but consume lots of computation.
-            weights = varComb(varIdent(form= ~1|target),
-                              varIdent(form= ~1|comp_treat)
-                              ),
-            control = lmeControl(msMaxIter = 100000),
-            data=dat_ratio)
-```
-
-
-```{r}
-m_ratio %>% Ftable
-```
-
-
-```{r}
-dat_ratio %>% 
-  ggplot(aes(x = fert, y = log(ratio))) + geom_boxplot() +
-  facet_wrap( ~ light) + labs(title = 'Pooled', y = 'alien/native\n', x = '\nNutrient level') + theme
-
-```
-
-
-# analysis IIII
-root allocation
-```{r}
-dat_root <- dat %>% filter(!is.na(root)) %>% 
-  mutate(RSR = log(root/biomass))
-```
-
-```{r}
-u <- rep(1, nrow(dat_root))
-m_root <- lme(RSR ~ status*fert * light, 
-            random=list(u = pdBlocked(list(
-                                          pdIdent(form = ~ family_tar-1),
-                                          pdIdent(form = ~ target-1),
-                                          pdIdent(form = ~ light_slope-1),
-                                          pdIdent(form = ~ fert_slope-1)
-                                          ))), # adding pot id does not improve the model, but consume lots of computation.
-            weights = varComb(varIdent(form= ~1|target)
-                              ),
-            control = lmeControl(msMaxIter = 100000),
-            data=dat_root)
-```
-
-
-
-```{r}
-m_root %>% Ftable()
-```
-
-```{r}
-dat_root %>% 
-  ggplot(aes(x = fert, y = RSR, fill = status)) + geom_boxplot() +
-  facet_wrap( ~ light) + labs(title = 'China', y = 'RSR\n', x = '\nNutrient level') + theme
-```
-
-
 
 ```{r}
 save(file = 'results.RData', list = ls())
