@@ -264,8 +264,7 @@ m0 <- lme(log(biomass) ~ status*(T_alone_comp + T_intra_inter) * fert * light, #
                                         pdIdent(form = ~ light_slope -1),
                                         pdIdent(form = ~ fert_slope -1),  # similar to random slope
                                         pdIdent(form = ~ family_comp-1),
-                                        pdIdent(form = ~ comp-1),
-                                        pdIdent(form = ~ cage_rand1-1)
+                                        pdIdent(form = ~ comp-1)
                                         ))),
           weights = varComb(varIdent(form= ~1|target),
                             varIdent(form= ~1|comp_treat)),
@@ -413,7 +412,7 @@ theme <-theme(panel.background = element_blank(),
               legend.key.height = unit(0.8,'line'),
               legend.background = element_blank(),
               legend.key        = element_rect(colour = NA, fill = NA),
-              plot.tag    = element_text(size = 8, face  = 'bold'),
+              plot.tag    = element_text(size = 9.5, face  = 'bold'),
               plot.title  = element_text(hjust = 0.5, size = 10),
               plot.margin = margin(t = 0.5, r = 0.1, b = 0, l = 0.1, unit = "cm"))
 ```
@@ -422,21 +421,62 @@ theme <-theme(panel.background = element_blank(),
 
 modelled values\
 
-```{r}
+```{r, eval = F}
 u <- rep(1, nrow(dat)) # for pooled data
 m_resource  <- update(m0, .~ status * fert * light) # fig. 1
 m_comp <- update(m0, ~ light * fert* comp_treat) # fig. 2
 ```
 
 
+percentage change
 ```{r}
+# # fert
+# test  <- update(m0, .~ fert) # fig. 1
+# test <- effect('fert', test) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
+# print(paste('fert = ',test[2,1]/test[1,1] - 1))
+# 
+# # light
+# test  <- update(m0, .~ light) # fig. 1
+# test <- effect('light', test) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
+# print(paste('light = ',test[2,1]/test[1,1] - 1))
+# 
+# 
+# # fert:light
+# test  <- update(m0, .~ fert*light) # fig. 1
+# test <- effect('fert:light', test) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
+# print(paste('fert:light = ',test[4,1]/test[1,1] - 1))
+# 
+# # competition
+# test  <- update(m0, .~ T_alone_comp + T_intra_inter) # fig. 1
+# effect('T_alone_comp', test, xlevels = list(T_alone_comp = c(-0.66666667, 0.3333333))) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
+# print(paste('comp = ',test[2,1]/test[1,1] - 1))
+# 
+# #intra_inter
+# test  <- update(m0, .~ comp_treat) # fig. 1
+# test <- effect('comp_treat', test) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
+# test[2,1]/test[3,1]-1
+# 
+# # main inter
+# test <- effect('status:fert:light', m_resource) %>% as.data.frame() %>% 
+#   mutate(fit = exp(fit))
+# 
+# test[7,4]/test[8,4]-1 # both high
+# test[5,4]/test[6,4]-1 # high light
+# test[3,4]/test[4,4]-1 # high nutrient
+# test[1,4]/test[2,4]-1 # both low
+
+```
+
+
+
+```{r, eval = F}
 u <- rep(1, nrow(dat_yj_only)) # China
 m_resource_yj <- update(m_yj, .~ status * fert * light)
 m_comp_resource_yj <- update(m_yj, .~ status * comp_treat * light)
 m_status <- update(m_yj, .~ status * status_comp)
 ```
 
-```{r}
+```{r, eval = F}
 u <- rep(1, nrow(dat_zz_only))
 m_resource_zz <- update(m_zz, .~ status * fert * light)
 m_comp_resource_zz <- update(m_zz, .~ status * comp_treat * light)
@@ -453,9 +493,9 @@ plot_resource <- function(model = m_resource, ymax = 17, title = NA){
   plot <- t %>% 
     mutate(origin = status) %>% # rename
     ggplot() +
-    geom_point(aes(x = xaxis, y = fit %>% exp, col = origin),size = 2) +
+    geom_point(aes(x = xaxis, y = fit %>% exp, col = origin),size = 2.5) +
     geom_errorbar(aes(ymin = lower %>% exp, ymax = upper %>% exp, x = xaxis, col = origin), 
-                  width = 0,  size = 0.8,
+                  width = 0,  size = 0.6,
                   inherit.aes = FALSE) +
     scale_x_continuous(limits = c(0.5, 11.5), breaks = c(1.5, 4.5, 7.5, 10.5), 
                        labels = c("Low resources", "+ nutrient", '+ light', '+ nutrient & light')) + 
@@ -469,14 +509,6 @@ plot_resource <- function(model = m_resource, ymax = 17, title = NA){
 ```
 
 ### joint (Fig. 1)
-```{r}
-
-t <- effect('status:fert:light', m_resource) %>% as.data.frame() %>% 
-  mutate(xaxis = c(1, 2, 4, 5, 7, 8, 10, 11))
-
-```
-
-
 
 ```{r}
 p1 <- plot_resource()
@@ -499,7 +531,7 @@ p_s1b <- plot_resource(m_resource_zz, ymax = 4,  title = 'Germany\n' ) + labs(ta
         axis.text.y  = element_text(size = 7))
 
 ggsave('./fig/s1.pdf', grid.arrange(p_s1a, p_s1b, ncol =2, nrow = 1), 
-       height = 6.5/2.54, width = 20/2.54, useDingbats=FALSE)
+       height = 8.5/2.54, width = 20/2.54, useDingbats=FALSE)
 
 ```
 
@@ -517,9 +549,9 @@ col_fig <- c('#F39C12', '#115888', '#85C1E9')
 
 p2 <- t_comp %>% 
   ggplot() +
-  geom_point(aes(x = xaxis, y = fit %>% exp, col = comp_treat),size = 2) +
+  geom_point(aes(x = xaxis, y = fit %>% exp, col = comp_treat),size = 2.5) +
   geom_errorbar(aes(ymin = lower %>% exp, ymax = upper %>% exp, x = xaxis, col = comp_treat), 
-                width = 0,  size = 0.8,
+                width = 0,  size = 0.6,
                 inherit.aes = FALSE) +
   scale_x_continuous(limits = c(0.5, 15.5), breaks = c(2, 6, 10, 14), 
                      labels = c("Low resources", "+ nutrient", '+ light', '+ nutrient & light')) + 
@@ -551,10 +583,10 @@ t_status <- t_status[c(1,4, 5, 8),] %>%
 p_comp <- t_status %>% 
   ggplot() +
   geom_point(aes(x = xaxis, y = fit %>% exp, col = status), 
-             size = 2) +
+             size = 2.5) +
   geom_errorbar(aes(ymin = lower %>% exp, ymax = upper %>% exp, x = xaxis, col = status), 
                 width = 0,  inherit.aes = FALSE,
-                size = 0.8) +
+                size = 0.6) +
   scale_x_continuous(limits = c(0.5, 5.5), breaks = c(1, 2, 4, 5), 
                      labels = c('Alien', 'Native', 'Alien', 'Native')) + 
   scale_y_continuous(limits = c(0, 20)) + 
@@ -583,9 +615,9 @@ t_light_comp_zz <- effect('status:comp_treat:light', m_comp_resource_zz) %>% as.
 p_light_comp_zz <- t_light_comp_zz %>% 
   mutate(comp_treat = ifelse(comp_treat == 'intra', 'Intraspecific competition', 'Interspecific competition')) %>% 
   ggplot() +
-  geom_point(aes(x = xaxis, y = fit %>% exp, col = status), size = 2) +
+  geom_point(aes(x = xaxis, y = fit %>% exp, col = status), size = 2.5) +
   geom_errorbar(aes(ymin = lower %>% exp, ymax = upper %>% exp, x = xaxis, col = status), 
-                width = 0,  size = 0.8,
+                width = 0,  size = 0.6,
                 inherit.aes = FALSE) +
   scale_x_continuous(limits = c(0.5, 5.5), breaks = c(1.5, 4.5), 
                      labels = c('Low light-intensity', 'High light-intensity')) + 
@@ -602,6 +634,6 @@ ggsave('./fig/origin_light_comp.pdf', p_light_comp_zz, height = 7/2.54, width = 
 
 
 ```{r}
-save(file = 'results.RData', list = ls())
+# save(file = 'results.RData', list = ls())
 ```
 
