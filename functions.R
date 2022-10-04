@@ -1,3 +1,7 @@
+
+
+
+
 # show table
 Ftable <- function(model){
   t <- Anova(model, type = 2) %>% 
