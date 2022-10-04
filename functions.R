@@ -1,10 +1,10 @@
 # show table
 Ftable <- function(model){
-  t <- anova(model) %>% 
+  t <- Anova(model, type = 2) %>% 
     as.data.frame() %>% 
     rownames_to_column(var = 'items') %>% 
-    mutate(' ' = ifelse(`p-value` < 0.05, '\u2217',
-                        ifelse(`p-value` < 0.1, '\u2020', ''))) %>% 
+    mutate(' ' = ifelse(`Pr(>Chisq)` < 0.05, '\u2217',
+                        ifelse(`Pr(>Chisq)` < 0.1, '\u2020', ''))) %>% 
     kable(digits = 4) %>% 
     kable_styling()
   t
@@ -15,16 +15,17 @@ Ftable <- function(model){
 Ftable_ext <- function(model){
   
   # anova table
-  table_fix <- model %>% anova %>% 
+  table_fix <- model %>% Anova %>% 
     as.data.frame() %>% 
     rownames_to_column(var = 'items') %>% 
-    mutate(df = paste(numDF, denDF, sep = ', '),
-           ' ' = ifelse(`p-value` < 0.05, '\u2217',
-                        ifelse(`p-value` < 0.1, '\u2020', '')),
-           `p-value` = sprintf('%.3f',round(`p-value`,3)),
-           `F-value` = sprintf('%.3f',round(`F-value`,3))
+    #mutate(df = paste(numDF, denDF, sep = ', '),
+    mutate(df = Df,
+           ' ' = ifelse(`Pr(>Chisq)` < 0.05, '\u2217',
+                        ifelse(`Pr(>Chisq)` < 0.1, '\u2020', '')),
+           `Pr(>Chisq)` = sprintf('%.3f',round(`Pr(>Chisq)`,3)),
+           `Chisq` = sprintf('%.3f',round(`Chisq`,3))
     ) %>% 
-    dplyr::select(items, df, `F-value`,`p-value`, ` `)
+    dplyr::select(items, df, `Chisq`,`Pr(>Chisq)`, ` `)
   
   # variance
   table_rand <- VarCorr(model)[,2] %>% 

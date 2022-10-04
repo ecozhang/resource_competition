@@ -21,19 +21,16 @@ Here, we aim to test whether **resource availability** (light and/or nutrient) a
 **The design**:\
 In Konstanz, Germany, Angelina grew 16 species (8 aliens and 8 natives), either alone, or with intraspecific competition, or with interspecific competition (32 out of the 64 alien-native pairs were included). \
 
-In Changchun, China, Yanjie's group did a similar experiment with 8 species (4 aliens and 4 natives). They also included alien-alien and native-native pairs.\
+In Changchun, China, Huifei (from Yanjie's group)grew 8 species (4 aliens and 4 natives) in a similar design with additional pairs of alien-alien and native-native.\
 
 
 **The analyses**:\
-First, I pooled two experiments together, with the alien-alien and native-native pairs in Yanjie's experiment removed (model: m0).\
+First, I pooled two experiments together, with the alien-alien and native-native pairs in China removed (model: m0).\
 Then, I analyzed the two experiments seperately (models: m_zz & m_yj).\
 
 **The results**:\
 Most importantly, all three models showed that aliens were more competitive than natives, when both nutrient and light availabilities were high. This is indicated by the significant, or margnially significant, interactions between status (alien or native), fertilization and shading.
 
-
-**To do**:\
-1. The trade-off between light competition and nutrient competition.
 
 
 <style type="text/css">
@@ -91,6 +88,7 @@ dir.create('table', showWarnings = F)
 library(tidyverse)
 library(Taxonstand)
 library(nlme)
+library(car)
 library(knitr)
 library(kableExtra)
 library(gridExtra)
@@ -112,7 +110,7 @@ colnames(dat_zz) <- colnames(dat_zz) %>% tolower()
 dat_yj <- dat_yj_raw %>% 
   dplyr::select(Nr., Target_Species, Target_Status, Competition, Competitor_Species, Competitor_Status,
          N_Treatment, Shading_Treatment,
-         Target_Shoot, Competitor_Shoot, Target_Root)
+         Target_Shoot, Competitor_Shoot, Target_Root, Target_IniHeight, Competitor_IniHeight)
 
 ```
 
@@ -120,8 +118,9 @@ dat_yj <- dat_yj_raw %>%
 ```{r}
 # make pots with two data points into two rows
 dat_yj_t <- dat_yj %>% # target individuals
-  dplyr::select(-Competitor_Shoot) %>% 
+  dplyr::select(-Competitor_Shoot, -Competitor_IniHeight) %>% 
   rename(biomass = Target_Shoot,
+         ini_height = Target_IniHeight,
          target  = Target_Species,
          status  = Target_Status,
          comp        = Competitor_Species,
@@ -133,8 +132,9 @@ dat_yj_t <- dat_yj %>% # target individuals
          root = Target_Root)
 
 dat_yj_c <- dat_yj %>% # competitors
-  dplyr::select(-Target_Shoot) %>% 
+  dplyr::select(-Target_Shoot, -Target_IniHeight) %>% 
   rename(biomass = Competitor_Shoot,
+         ini_height = Competitor_IniHeight,
          target  = Competitor_Species,
          status  = Competitor_Status,
          comp        = Target_Species,
@@ -254,6 +254,8 @@ dat <- dat %>%
 ```
 
 
+
+
 ```{r, eval = F}
 u <- rep(1, nrow(dat))
 m0 <- lme(log(biomass) ~ status*(T_alone_comp + T_intra_inter) * fert * light, # + length_in_mm
@@ -264,7 +266,10 @@ m0 <- lme(log(biomass) ~ status*(T_alone_comp + T_intra_inter) * fert * light, #
                                         pdIdent(form = ~ light_slope -1),
                                         pdIdent(form = ~ fert_slope -1),  # similar to random slope
                                         pdIdent(form = ~ family_comp-1),
-                                        pdIdent(form = ~ comp-1)
+                                        pdIdent(form = ~ comp-1),
+                                        pdIdent(form = ~ cage_rand1-1),
+                                        pdIdent(form = ~ cage_rand2-1),
+                                        pdIdent(form = ~ id-1)
                                         ))),
           weights = varComb(varIdent(form= ~1|target),
                             varIdent(form= ~1|comp_treat)),
@@ -273,6 +278,7 @@ m0 <- lme(log(biomass) ~ status*(T_alone_comp + T_intra_inter) * fert * light, #
 
 
 ```
+
 
 
 ```{r}
@@ -286,8 +292,6 @@ m0 %>% Ftable
 ```{r}
 dat_zz_only <- dat %>% 
   filter(exp == 'A')
-
-
 ```
 
 
@@ -301,14 +305,16 @@ m_zz <- lme(log(biomass) ~ status*(T_alone_comp + T_intra_inter) * fert * light,
                                           pdIdent(form = ~ family_comp-1),
                                           pdIdent(form = ~ light_slope-1),
                                           pdIdent(form = ~ fert_slope-1),
-                                          pdIdent(form = ~ comp-1)
+                                          pdIdent(form = ~ comp-1),
+                                          pdIdent(form = ~ cage_rand1-1),
+                                          pdIdent(form = ~ cage_rand2-1),
+                                          pdIdent(form = ~ id-1)
                                           ))), # adding pot id or block does not improve the model, but consume lots of computation.
             weights = varComb(varIdent(form= ~1|target),
                               varIdent(form= ~1|comp_treat)
                               ),
             control = lmeControl(msMaxIter = 100000),
             data=dat_zz_only)
-
 ```
 
 
@@ -352,7 +358,8 @@ m_yj <- lme(log(biomass) ~ status*(T_alone_comp + T_intra_inter + T_alien_native
                                           pdIdent(form = ~ family_comp-1),
                                           pdIdent(form = ~ light_slope-1),
                                           pdIdent(form = ~ fert_slope-1),
-                                          pdIdent(form = ~ comp-1)
+                                          pdIdent(form = ~ comp-1),
+                                          pdIdent(form = ~ id-1)
                                           ))),
           weights = varComb(varIdent(form= ~1|target),
                             varIdent(form= ~1|status_comp) # removing this is ok
@@ -363,32 +370,47 @@ m_yj <- lme(log(biomass) ~ status*(T_alone_comp + T_intra_inter + T_alien_native
 ```
 
 
+```{r}
+m_yj_co <- update(m_yj, .~ log(ini_height) + status*(T_alone_comp + T_intra_inter + T_alien_native) * fert * light)
+```
+
 
 ```{r}
 m_yj %>% Ftable
+m_yj_co %>% Ftable
 ```
 
 
 Export all tables in one file
 
+
+```{r}
+Ftable_ext(m0)
+```
+
 ```{r}
 tables <- lapply(list(m_yj, m_zz, m0), Ftable_ext)
 table_in_one <- tables[[1]] %>% # China
-  left_join(tables[[2]], by = 'items') %>% # Germany 
+  full_join(tables[[2]], by = 'items') %>% # Germany 
   full_join(tables[[3]], by = 'items') %>%  # both
   replace_na(list(`.y` = ' ',
                   ` ` = ' '
                   )) %>% 
   mutate_if(is.numeric, round,3)
-  
+```
 
+```{r}
+write.csv(Ftable_ext(m_yj_co) %>% mutate_if(is.numeric, round,3), 'table/table_co.csv', fileEncoding = "UTF-8")
+```
+
+```{r}
 # table_in_one %>% kable() %>% 
 #   kable_styling()
 ```
 
 
 ```{r}
-write.csv(table_in_one, 'table/table_in_one.csv', fileEncoding = "UTF-8")
+write.csv(table_in_one, 'table/table_in_one20220116.csv', fileEncoding = "UTF-8")
 ```
 
 
@@ -399,22 +421,22 @@ All figures are ploted with modelled values and back-transformed to raw scale.\
 
 
 ```{r}
-theme <-theme(panel.background = element_blank(),
-              panel.border     = element_rect(fill = NA), 
-              strip.background = element_blank(),
-              strip.text.x = element_text(size = 10),
-              axis.text.x = element_text(size = 8, angle = 0, hjust = 0.5, colour = 'black'),
-              axis.text.y  = element_text(size = 8, colour = 'black'),
-              axis.title = element_text(size = 10),# size of x  y lab
-              #legend.position   = c(0.9, 0.85),
-              legend.title      = element_text(size = 8),
-              legend.text       = element_text(size = 6),
-              legend.key.height = unit(0.8,'line'),
-              legend.background = element_blank(),
-              legend.key        = element_rect(colour = NA, fill = NA),
-              plot.tag    = element_text(size = 9.5, face  = 'bold'),
-              plot.title  = element_text(hjust = 0.5, size = 10),
-              plot.margin = margin(t = 0.5, r = 0.1, b = 0, l = 0.1, unit = "cm"))
+theme <-  theme(panel.background = element_blank(),
+                panel.border     = element_rect(fill = NA), 
+                strip.background = element_blank(),
+                strip.text.x = element_text(size = 10),
+                axis.text.x = element_text(size = 8, angle = 0, hjust = 0.5, colour = 'black'),
+                axis.text.y  = element_text(size = 8, colour = 'black'),
+                axis.title = element_text(size = 10),# size of x  y lab
+                #legend.position   = c(0.9, 0.85),
+                legend.title      = element_text(size = 8),
+                legend.text       = element_text(size = 6),
+                legend.key.height = unit(0.8,'line'),
+                legend.background = element_blank(),
+                legend.key        = element_rect(colour = NA, fill = NA),
+                plot.tag    = element_text(size = 9.5, face  = 'bold'),
+                plot.title  = element_text(hjust = 0.5, size = 10),
+                plot.margin = margin(t = 0.5, r = 0.1, b = 0, l = 0.1, unit = "cm"))
 ```
 
 
@@ -429,41 +451,55 @@ m_comp <- update(m0, ~ light * fert* comp_treat) # fig. 2
 
 
 percentage change
+
 ```{r}
-# # fert
-# test  <- update(m0, .~ fert) # fig. 1
-# test <- effect('fert', test) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
-# print(paste('fert = ',test[2,1]/test[1,1] - 1))
-# 
-# # light
-# test  <- update(m0, .~ light) # fig. 1
-# test <- effect('light', test) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
-# print(paste('light = ',test[2,1]/test[1,1] - 1))
-# 
-# 
-# # fert:light
-# test  <- update(m0, .~ fert*light) # fig. 1
-# test <- effect('fert:light', test) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
-# print(paste('fert:light = ',test[4,1]/test[1,1] - 1))
-# 
-# # competition
-# test  <- update(m0, .~ T_alone_comp + T_intra_inter) # fig. 1
-# effect('T_alone_comp', test, xlevels = list(T_alone_comp = c(-0.66666667, 0.3333333))) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
-# print(paste('comp = ',test[2,1]/test[1,1] - 1))
-# 
-# #intra_inter
-# test  <- update(m0, .~ comp_treat) # fig. 1
-# test <- effect('comp_treat', test) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
-# test[2,1]/test[3,1]-1
-# 
-# # main inter
-# test <- effect('status:fert:light', m_resource) %>% as.data.frame() %>% 
-#   mutate(fit = exp(fit))
-# 
-# test[7,4]/test[8,4]-1 # both high
-# test[5,4]/test[6,4]-1 # high light
-# test[3,4]/test[4,4]-1 # high nutrient
-# test[1,4]/test[2,4]-1 # both low
+          random=list(u = pdBlocked(list(
+                                        pdIdent(form = ~ exp-1),
+                                        pdIdent(form = ~ family_tar-1),
+                                        pdIdent(form = ~ target-1),
+                                        pdIdent(form = ~ light_slope -1),
+                                        pdIdent(form = ~ fert_slope -1),  # similar to random slope
+                                        pdIdent(form = ~ family_comp-1),
+                                        pdIdent(form = ~ comp-1)
+                                        )))
+```
+
+
+```{r}
+# fert
+test  <- update(m0, .~ fert, random = random) # fig. 1
+test <- effect('fert', test) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
+print(paste('fert = ',test[2,1]/test[1,1] - 1))
+
+# light
+test  <- update(m0, .~ light, random = random) # fig. 1
+test <- effect('light', test) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
+print(paste('light = ',test[2,1]/test[1,1] - 1))
+
+
+# fert:light
+test  <- update(m0, .~ fert*light, random = random) # fig. 1
+test <- effect('fert:light', test) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
+print(paste('fert:light = ',test[4,1]/test[1,1] - 1))
+
+# competition
+test  <- update(m0, .~ T_alone_comp + T_intra_inter, random = random) # fig. 1
+effect('T_alone_comp', test, xlevels = list(T_alone_comp = c(-0.66666667, 0.3333333))) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
+print(paste('comp = ',test[2,1]/test[1,1] - 1))
+
+#intra_inter
+test  <- update(m0, .~ comp_treat, random = random) # fig. 1
+test <- effect('comp_treat', test) %>% as.data.frame() %>% dplyr::select(fit) %>% exp
+test[2,1]/test[3,1]-1
+
+# main inter
+test <- effect('status:fert:light', m_resource) %>% as.data.frame() %>%
+  mutate(fit = exp(fit))
+
+test[7,4]/test[8,4]-1 # both high
+test[5,4]/test[6,4]-1 # high light
+test[3,4]/test[4,4]-1 # high nutrient
+test[1,4]/test[2,4]-1 # both low
 
 ```
 
@@ -511,8 +547,16 @@ plot_resource <- function(model = m_resource, ymax = 17, title = NA){
 ### joint (Fig. 1)
 
 ```{r}
-p1 <- plot_resource()
+
+
+p1 <- plot_resource() +
+  annotate(geom = 'text', x = 1, y = 16, label = 'nutrient*', colour = 'black', hjust = 0, size = 2.4) +
+  annotate(geom = 'text', x = 1, y = 14.75, label = 'light*', colour = 'black', hjust = 0, size = 2.4) +
+  annotate(geom = 'text', x = 1, y = 13.5, label = 'origin x light x nutrient*', colour = 'black', hjust = 0, size = 2.4) 
+p1
 ```
+
+
 
 
 ```{r}
@@ -535,9 +579,92 @@ ggsave('./fig/s1.pdf', grid.arrange(p_s1a, p_s1b, ncol =2, nrow = 1),
 
 ```
 
+### different competition treatment
+```{r}
+m_resource_comp <- update(m0, .~ status * fert * light*comp_treat, random = random)
+```
 
 
-## fert:light:competition (Fig. 2)
+```{r}
+t_res_comp <- effect('status * fert * light*comp_treat', m_resource_comp) %>% as.data.frame() %>% 
+  mutate(xaxis = rep(c(1, 2, 4, 5, 7, 8, 10, 11), 3))
+```
+
+
+```{r}
+# t_res_comp %>% 
+#   mutate(origin = status) %>% # rename
+#   mutate(comp_treat = ifelse(comp_treat == 'inter', 'Interspecific competition', as.character(comp_treat))) %>% 
+#   mutate(comp_treat = ifelse(comp_treat == 'intra', 'Intraspecific competition', as.character(comp_treat))) %>% 
+#   mutate(comp_treat = ifelse(comp_treat == 'alone', 'Alone', as.character(comp_treat))) %>% 
+#   ggplot() +
+#   geom_point(aes(x = xaxis, y = fit %>% exp, col = origin),size = 2.5) +
+#   geom_errorbar(aes(ymin = lower %>% exp, ymax = upper %>% exp, x = xaxis, col = origin), 
+#                 width = 0,  size = 0.6,
+#                 inherit.aes = FALSE) +
+#   scale_x_continuous(limits = c(0.5, 11.5), breaks = c(1.5, 4.5, 7.5, 10.5), 
+#                      labels = c("Low resources", "+ nutrient", '+ light', '+ nutrient & light')) + 
+#   # scale_y_continuous(limits = c(0, ymax)) + 
+#   labs(x = '', y = 'Aboveground biomass [g]\n', col = 'Origin') + theme +
+#   facet_wrap(~comp_treat, ncol = 1)
+# ggsave('./fig/s4.pdf', 
+#        height = 20/2.54, width = 12/2.54, useDingbats=FALSE)
+```
+
+
+```{r}
+t_res_comp <- effect('status * fert * light*comp_treat', m_resource_comp) %>% as.data.frame() %>% 
+  arrange(status, comp_treat) %>% 
+  mutate(xaxis = rep(c(1:3, 5:7), each = 4))
+
+t_res_comp %>% dplyr::select(status, comp_treat, xaxis) %>% unique
+```
+
+
+
+```{r}
+dat_p <- dat %>% 
+  mutate(origin = status) %>% # rename
+  mutate(cate = paste(light, fert),
+         cate = ifelse(cate == 'low light low', 'Low resources', cate),
+         cate = ifelse(cate == 'low light high', '+ nutrient', cate),
+         cate = ifelse(cate == 'high light low', '+ light', cate),
+         cate = ifelse(cate == 'high light high', '+ nutrient & light', cate)
+         ) %>% 
+  mutate(cate = factor(cate, levels = c("Low resources", "+ nutrient", '+ light', '+ nutrient & light'))) %>% 
+  left_join(t_res_comp %>% dplyr::select(status, comp_treat, xaxis) %>% unique)
+```
+
+```{r}
+
+col_fig <- c('#F39C12', '#115888', '#85C1E9')
+t_res_comp %>% 
+  mutate(origin = status) %>% # rename
+  mutate(cate = paste(light, fert),
+         cate = ifelse(cate == 'low light low', 'Low resources', cate),
+         cate = ifelse(cate == 'low light high', '+ nutrient', cate),
+         cate = ifelse(cate == 'high light low', '+ light', cate),
+         cate = ifelse(cate == 'high light high', '+ nutrient & light', cate)
+         ) %>% 
+  mutate(cate = factor(cate, levels = c("Low resources", "+ nutrient", '+ light', '+ nutrient & light'))) %>% # order
+  ggplot() +
+  geom_jitter(data = dat_p, aes(x = xaxis, y = biomass),  colour = 'grey80', alpha = 0.4, width = 0.1, size = 1) + 
+  geom_point(aes(x = xaxis, y = fit %>% exp, col = comp_treat),size = 2) +
+  geom_errorbar(aes(ymin = lower %>% exp, ymax = upper %>% exp, x = xaxis, col = comp_treat), 
+                width = 0,  size = 0.6,
+                inherit.aes = FALSE) + 
+  scale_x_continuous(breaks = c(2, 6), labels = c('Alien', 'Native'), limits = c(0.5, 7.5)) +
+  scale_color_manual(values = col_fig, labels = c('no', 'inter', 'intra')) + 
+  labs(x = '', y = 'Aboveground biomass [g]\n', col = 'Competition') +
+  theme + theme(strip.background = element_rect(fill = 'gray80', colour = "black"),
+                panel.grid = element_line(color = NA)) + 
+  facet_wrap(~ cate)
+ggsave('./fig/s4.pdf',
+       height = 10/2.54, width = 15/2.54, useDingbats=FALSE)
+```
+
+
+## fert:light:competition (Fig. 3)
 ```{r}
 t_comp <- effect('light * fert* comp_treat', m_comp) %>% as.data.frame() %>% 
   arrange(desc(light), desc(fert)) %>% 
@@ -556,9 +683,12 @@ p2 <- t_comp %>%
   scale_x_continuous(limits = c(0.5, 15.5), breaks = c(2, 6, 10, 14), 
                      labels = c("Low resources", "+ nutrient", '+ light', '+ nutrient & light')) + 
   scale_y_continuous(limits = c(0, 17)) + 
-  scale_color_manual(values = col_fig) + 
-  labs(x = '', y = 'Aboveground biomass [g]\n', col = 'Competition') + theme
-
+  scale_color_manual(values = col_fig,  labels = c('no', 'inter', 'intra')) + 
+  labs(x = '', y = 'Aboveground biomass [g]\n', col = 'Competition') + theme +
+  annotate(geom = 'text', x = 1, y = 16, label = 'competition x nutrient*', colour = 'black', hjust = 0, size = 2.4) +
+  annotate(geom = 'text', x = 1, y = 14.75, label = 'competition x light*', colour = 'black', hjust = 0, size = 2.4) +
+  annotate(geom = 'text', x = 1, y = 13.5, label = 'inter vs intra*', colour = 'black', hjust = 0, size = 2.4) 
+p2
 ```
 
 
