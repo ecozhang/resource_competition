@@ -564,7 +564,7 @@ p3 <- t_comp %>%
   annotate(geom = 'text', x = 1, y = 13.5, label = 'inter vs intra*', colour = 'black', hjust = 0, size = 2.4) +
   theme(legend.position = 'bottom')
 p3
-ggsave('./fig/f3_comp.pdf', p2, height = 7.5/2.54, width = 9/2.54, useDingbats=FALSE)
+ggsave('./fig/f3_comp.pdf', p3, height = 7.5/2.54, width = 9/2.54, useDingbats=FALSE)
 ```
 
 
